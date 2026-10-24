@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>快拍相機</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="快拍">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--ink:#fff;--dim:rgba(255,255,255,.7);--glass:rgba(20,22,26,.62);--accent:#ffd23f;
+  --st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#000;color:var(--ink);overflow:hidden;
+  font-family:"Noto Sans TC",-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.screen{position:fixed;inset:0}
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#video.mirror{transform:scaleX(-1)}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+#flash.on{opacity:.85;transition:none}
+.top{position:absolute;top:0;left:0;right:0;padding:calc(var(--st) + 12px) 16px 12px;display:flex;justify-content:space-between;
+  background:linear-gradient(#0009,#0000)}
+.pill{background:var(--glass);border-radius:999px;min-height:44px;padding:0 16px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;backdrop-filter:blur(10px)}
+.bar{position:absolute;left:0;right:0;bottom:0;padding:20px 28px calc(var(--sb) + 22px);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  background:linear-gradient(#0000,#000a)}
+.thumb{width:58px;height:58px;border-radius:14px;border:2px solid #fff6;background:#222 center/cover;justify-self:start;overflow:hidden}
+.shutter{width:80px;height:80px;border-radius:50%;border:5px solid #fff;padding:0;display:grid;place-items:center}
+.shutter::after{content:"";width:60px;height:60px;border-radius:50%;background:#fff;transition:transform .12s}
+.shutter:active::after{transform:scale(.86)}
+.flip{width:58px;height:58px;border-radius:50%;background:var(--glass);justify-self:end;display:grid;place-items:center}
+.flip svg{width:28px;height:28px}
+#err{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px;text-align:center;background:#000;line-height:1.6}
+#err.on{display:flex}
+#err p{margin:0;max-width:300px;color:var(--dim)}
+.btn{background:var(--accent);color:#1b1500;font-weight:700;border-radius:14px;min-height:50px;padding:0 24px}
+.btn.ghost{background:var(--glass);color:var(--ink)}
+/* 相簿 */
+#gallery,#viewer{display:none;background:#0b0c0e;flex-direction:column}
+#gallery.on,#viewer.on{display:flex}
+.head{display:flex;align-items:center;justify-content:space-between;padding:calc(var(--st) + 12px) 16px 12px}
+.head h2{margin:0;font-size:18px}
+.grid{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding:0 3px calc(var(--sb) + 12px);align-content:start}
+.grid button{aspect-ratio:1;background:#222 center/cover}
+.none{margin:auto;color:var(--dim)}
+#viewer img{flex:1;min-height:0;width:100%;object-fit:contain}
+.vbar{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 16px calc(var(--sb) + 16px)}
+.vbar .btn{width:100%}
+.danger{background:#ff5a5f;color:#fff}
+#toast{position:fixed;left:50%;bottom:calc(var(--sb) + 130px);transform:translateX(-50%);background:var(--glass);padding:10px 18px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;backdrop-filter:blur(10px)}
+#toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<main class="screen" id="cam">
+  <video id="video" autoplay playsinline muted></video>
+  <div id="flash"></div>
+  <div class="top"><span class="pill" id="count">0 張照片</span></div>
+  <div class="bar">
+    <button class="thumb" id="openGallery" aria-label="開啟相簿"></button>
+    <button class="shutter" id="shutter" aria-label="拍照"></button>
+    <button class="flip" id="flip" aria-label="切換前後鏡頭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a4 4 0 0 1 4-4h6l2 2h2a3 3 0 0 1 3 3v2"/><path d="M21 16a4 4 0 0 1-4 4h-6l-2-2H7a3 3 0 0 1-3-3v-2"/><path d="M17 3l-2 3 3 1M7 21l2-3-3-1"/></svg>
+    </button>
+  </div>
+  <div id="err">
+    <strong id="errTitle">無法使用相機</strong>
+    <p id="errBody"></p>
+    <button class="btn" id="retry">重新開啟相機</button>
+    <label class="btn ghost" style="display:flex;align-items:center">改用系統相機拍照
+      <input id="fallback" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+  </div>
+</main>
+
+<section class="screen" id="gallery" aria-label="相簿">
+  <div class="head"><h2>相簿</h2><button class="pill" id="closeGallery">返回相機</button></div>
+  <div class="grid" id="grid"></div>
+</section>
+
+<section class="screen" id="viewer" aria-label="檢視照片">
+  <div class="head"><h2 id="vtitle"></h2><button class="pill" id="closeViewer">返回</button></div>
+  <img id="vimg" alt="照片">
+  <div class="vbar">
+    <button class="btn" id="share">分享／儲存</button>
+    <button class="btn ghost" id="download">下載</button>
+    <button class="btn danger" id="del">刪除</button>
+  </div>
+</section>
+
+<div id="toast" role="status"></div>
+<canvas id="cv" hidden></canvas>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const video = $('video'), cv = $('cv');
+  let stream = null, facing = 'environment', photos = [], current = null, urls = new Map();
+
+  /* ---------- IndexedDB：照片永久保存在手機 ---------- */
+  const dbReady = new Promise((ok, no) => {
+    const r = indexedDB.open('camera-app', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('photos', { keyPath: 'id' });
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => no(r.error);
+  });
+  const tx = async (mode, fn) => {
+    const db = await dbReady;
+    return new Promise((ok, no) => {
+      const t = db.transaction('photos', mode), s = t.objectStore('photos'), req = fn(s);
+      t.oncomplete = () => ok(req && req.result);
+      t.onerror = () => no(t.error);
+    });
+  };
+  const savePhoto = p => tx('readwrite', s => s.put(p));
+  const removePhoto = id => tx('readwrite', s => s.delete(id));
+  const loadAll = () => tx('readonly', s => s.getAll());
+
+  const urlOf = p => { if (!urls.has(p.id)) urls.set(p.id, URL.createObjectURL(p.blob)); return urls.get(p.id); };
+  const toast = t => { const e = $('toast'); e.textContent = t; e.classList.add('on'); setTimeout(() => e.classList.remove('on'), 1800); };
+  const fmt = ts => new Date(ts).toLocaleString('zh-TW', { hour12: false });
+  const fname = p => 'photo-' + new Date(p.ts).toISOString().replace(/[:.]/g, '-') + '.jpg';
+
+  /* ---------- 相機 ---------- */
+  function showErr(title, body) { $('errTitle').textContent = title; $('errBody').textContent = body; $('err').classList.add('on'); }
+  async function startCamera() {
+    stopCamera();
+    $('err').classList.remove('on');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showErr('無法使用即時預覽', '此瀏覽器或連線不支援相機。請確認網址為 HTTPS，或改用系統相機。'); return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+      video.srcObject = stream;
+      video.classList.toggle('mirror', facing === 'user');
+      await video.play();
+    } catch (e) {
+      const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+      showErr(denied ? '相機權限未開啟' : '找不到可用的相機',
+        denied ? '請到手機「設定」中允許此 App 使用相機，然後按下重新開啟。' : '請確認鏡頭未被其他 App 使用，然後重試。');
+    }
+  }
+  function stopCamera() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = null; video.srcObject = null;
+  }
+
+  async function addBlob(blob) {
+    const p = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), ts: Date.now(), blob };
+    await savePhoto(p);
+    photos.unshift(p);
+    refresh();
+  }
+  function snap() {
+    if (!stream || !video.videoWidth) return;
+    const f = $('flash'); f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on')));
+    if (navigator.vibrate) navigator.vibrate(20);
+    cv.width = video.videoWidth; cv.height = video.videoHeight;
+    cv.getContext('2d').drawImage(video, 0, 0);
+    cv.toBlob(b => b ? addBlob(b).then(() => toast('已儲存')) : toast('拍照失敗，請再試一次'), 'image/jpeg', 0.92);
+  }
+
+  /* ---------- 介面 ---------- */
+  function refresh() {
+    $('count').textContent = photos.length + ' 張照片';
+    const t = $('openGallery');
+    t.style.backgroundImage = photos[0] ? `url(${urlOf(photos[0])})` : 'none';
+    const g = $('grid'); g.innerHTML = '';
+    if (!photos.length) { g.innerHTML = '<p class="none">還沒有照片</p>'; g.style.display = 'flex'; }
+    else {
+      g.style.display = 'grid';
+      photos.forEach(p => {
+        const b = document.createElement('button');
+        b.style.backgroundImage = `url(${urlOf(p)})`;
+        b.setAttribute('aria-label', '檢視 ' + fmt(p.ts));
+        b.onclick = () => openViewer(p);
+        g.appendChild(b);
+      });
+    }
+  }
+  const show = (id, on) => $(id).classList.toggle('on', on);
+  function openViewer(p) { current = p; $('vimg').src = urlOf(p); $('vtitle').textContent = fmt(p.ts); show('viewer', true); }
+
+  $('shutter').onclick = snap;
+  $('flip').onclick = () => { facing = facing === 'environment' ? 'user' : 'environment'; startCamera(); };
+  $('retry').onclick = startCamera;
+  $('fallback').onchange = async e => { const f = e.target.files[0]; if (f) { await addBlob(f); $('err').classList.remove('on'); toast('已儲存'); } e.target.value = ''; };
+  $('openGallery').onclick = () => show('gallery', true);
+  $('closeGallery').onclick = () => show('gallery', false);
+  $('closeViewer').onclick = () => show('viewer', false);
+  $('download').onclick = () => {
+    const a = document.createElement('a'); a.href = urlOf(current); a.download = fname(current);
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  $('share').onclick = async () => {
+    const file = new File([current.blob], fname(current), { type: 'image/jpeg' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+      else $('download').onclick();
+    } catch (e) { /* 使用者取消分享 */ }
+  };
+  $('del').onclick = async () => {
+    if (!confirm('刪除這張照片？此動作無法復原。')) return;
+    await removePhoto(current.id);
+    URL.revokeObjectURL(urls.get(current.id)); urls.delete(current.id);
+    photos = photos.filter(p => p.id !== current.id);
+    show('viewer', false); refresh(); toast('已刪除');
+  };
+
+  // 切到背景時釋放鏡頭，回來時自動重開
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopCamera();
+    else if (!$('gallery').classList.contains('on') && !$('viewer').classList.contains('on')) startCamera();
+  });
+  $('closeGallery').addEventListener('click', startCamera);
+
+  /* ---------- 啟動 ---------- */
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  loadAll().then(all => { photos = all.sort((a, b) => b.ts - a.ts); refresh(); }).catch(() => refresh());
+  startCamera();
+})();
+</script>
+</body>
+</html>
