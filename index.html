@@ -42,6 +42,9 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 #err p{margin:0;max-width:300px;color:var(--dim)}
 .btn{background:var(--accent);color:#1b1500;font-weight:700;border-radius:14px;min-height:50px;padding:0 24px}
 .btn.ghost{background:var(--glass);color:var(--ink)}
+.net .dot{width:10px;height:10px;border-radius:50%;background:#9aa0a6;flex:none}
+.net.good .dot{background:#4ade80}.net.mid .dot{background:var(--accent)}.net.bad .dot{background:#ff5a5f}
+.net{font-variant-numeric:tabular-nums}
 /* 相簿 */
 #gallery,#viewer{display:none;background:#0b0c0e;flex-direction:column}
 #gallery.on,#viewer.on{display:flex}
@@ -64,7 +67,10 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 <main class="screen" id="cam">
   <video id="video" autoplay playsinline muted></video>
   <div id="flash"></div>
-  <div class="top"><span class="pill" id="count">0 張照片</span></div>
+  <div class="top">
+    <span class="pill" id="count">0 張照片</span>
+    <button class="pill net" id="net" aria-label="網路速度，點按重新測速"><span class="dot"></span><span id="netText">測速中…</span></button>
+  </div>
   <div class="bar">
     <button class="thumb" id="openGallery" aria-label="開啟相簿"></button>
     <button class="shutter" id="shutter" aria-label="拍照"></button>
@@ -223,6 +229,49 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
     else if (!$('gallery').classList.contains('on') && !$('viewer').classList.contains('on')) startCamera();
   });
   $('closeGallery').addEventListener('click', startCamera);
+
+  /* ---------- 網路速度 ---------- */
+  const net = $('net'), netText = $('netText');
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  let testing = false, hasResult = false;
+  const setNet = (cls, text) => { net.className = 'pill net ' + cls; netText.textContent = text; };
+  async function measure() {
+    if (testing) return;
+    if (!navigator.onLine) { setNet('bad', '離線'); return; }
+    testing = true;
+    if (!hasResult) setNet('', '測速中…');
+    try {
+      const q = '?t=' + Date.now();
+      const t0 = performance.now();
+      const ping = await fetch('manifest.webmanifest' + q, { method: 'HEAD', cache: 'no-store' });
+      if (!ping.ok) throw new Error('ping');
+      const rtt = Math.max(1, Math.round(performance.now() - t0));
+      const t1 = performance.now();
+      const res = await fetch('speedtest.bin' + q, { cache: 'no-store' });
+      if (!res.ok) throw new Error('download');
+      const bytes = (await res.arrayBuffer()).byteLength;
+      const sec = Math.max((performance.now() - t1 - rtt) / 1000, 0.005);
+      const mbps = bytes * 8 / sec / 1e6;
+      hasResult = true;
+      setNet(mbps >= 5 ? 'good' : mbps >= 1 ? 'mid' : 'bad',
+        (mbps >= 100 ? mbps.toFixed(0) : mbps.toFixed(1)) + ' Mbps · ' + rtt + ' ms');
+    } catch (e) {
+      setNet('bad', navigator.onLine ? '測速失敗' : '離線');
+    }
+    testing = false;
+  }
+  net.onclick = () => {
+    const info = conn && conn.effectiveType
+      ? '系統回報：' + conn.effectiveType.toUpperCase() + (conn.downlink ? '，約 ' + conn.downlink + ' Mbps' : '')
+      : '重新測速中…（為估計值）';
+    toast(info); measure();
+  };
+  window.addEventListener('online', measure);
+  window.addEventListener('offline', () => setNet('bad', '離線'));
+  if (conn && conn.addEventListener) conn.addEventListener('change', measure);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) measure(); });
+  setInterval(() => { if (!document.hidden) measure(); }, 30000);
+  measure();
 
   /* ---------- 啟動 ---------- */
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

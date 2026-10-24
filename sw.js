@@ -9,6 +9,7 @@ self.addEventListener('activate', e => {
     .then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
+  const u = new URL(e.request.url);
+  if (e.request.method !== 'GET' || u.pathname.endsWith('speedtest.bin')) return;
   e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request)));
 });
